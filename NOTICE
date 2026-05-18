@@ -1,0 +1,54 @@
+cleaner — macOS cleanup CLI
+Copyright 2026 FishfishCai
+
+================================================================================
+This product is derived from Pearcleaner by alienator88:
+  https://github.com/alienator88/Pearcleaner
+
+Pearcleaner is licensed under Apache License 2.0 with Commons Clause.
+cleaner is distributed under the same license. See LICENSE for full terms.
+================================================================================
+
+PORTIONS DERIVED FROM PEARCLEANER
+---------------------------------
+
+The following components are substantially based on Pearcleaner's source:
+
+  * App-residual scanning algorithms
+    - AppPathFinder class (forward scan: find paths related to a given app)
+    - ReversePathFinder class (reverse scan: find residuals not claimed by
+      any installed app)
+    - Sensitivity tier model (.strict / .enhanced / .deep)
+
+  * Curated data tables
+    - `skipReverse` — daemon/system names excluded from orphan scan
+    - `conditions`, `skipConditions` — per-app include/exclude rules
+    - `skipDeepSearch` — bundle IDs that opt out of deep matching
+    - `reverseLocations` — Library directories enumerated for orphan scan
+    - `standardLibrarySubdirectories` — recognized Library subdirs
+
+  * Code-signing extraction
+    - SecCode / SecStaticCode entitlement and team-identifier reading
+      (loadAppInfo / getEntitlements / getTeamIdentifier)
+
+  * String/path normalization
+    - `String.normalized()` (alphanumeric-lowercase canonicalization for
+      substring matching)
+
+MODIFICATIONS IN cleaner
+------------------------
+
+The following work was done independently for this project:
+
+  * Ported from a SwiftUI macOS application to a single-file Swift CLI
+    (`#!/usr/bin/env swift cleaner.swift`).
+  * Added a unified interactive checkbox selector (alternate screen buffer,
+    arrow keys, wasd/hjkl alias, inverse-video cursor row).
+  * Added new modules not present in Pearcleaner:
+      - pkg     — uninstall macOS .pkg packages via lsbom/pkgutil receipts
+      - plugin  — list/uninstall plugins (QuickLook, Spotlight, Audio Unit, etc.)
+      - devenv  — scan/uninstall dev-tool caches (npm, Cargo, Xcode, etc.)
+  * Restructured into 8 PART sections with explicit shared-vs-local
+    boundaries (see file header).
+  * Section-headed default-selection model for app-uninstall (STRICT default
+    on, ENHANCED / DEEP default off).
