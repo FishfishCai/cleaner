@@ -14,10 +14,17 @@ macOS with Xcode Command Line Tools (`swift --version` to check;
 
 ## Install
 
+Run these from the directory where you cloned the repo:
+
 ```sh
 git clone https://github.com/FishfishCai/cleaner.git
 chmod +x cleaner/cleaner.swift
+
+mkdir -p ~/.local/bin
 ln -sf "$(pwd)/cleaner/cleaner.swift" ~/.local/bin/cleaner   # or any dir in $PATH
+
+# Ensure ~/.local/bin is on your PATH (zsh is the default macOS shell):
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
 
 ## Usage
