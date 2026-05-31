@@ -20,10 +20,12 @@ Run these from the directory where you cloned the repo:
 git clone https://github.com/FishfishCai/cleaner.git
 chmod +x cleaner/cleaner.swift
 
+# Symlink it into any directory on your PATH. ~/.local/bin is just one choice
+# (created here if missing); /usr/local/bin or your own bin dir works too.
 mkdir -p ~/.local/bin
-ln -sf "$(pwd)/cleaner/cleaner.swift" ~/.local/bin/cleaner   # or any dir in $PATH
+ln -sf "$(pwd)/cleaner/cleaner.swift" ~/.local/bin/cleaner
 
-# Ensure ~/.local/bin is on your PATH (zsh is the default macOS shell):
+# If ~/.local/bin isn't on your PATH yet (zsh is the default macOS shell):
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
 
