@@ -193,6 +193,18 @@ private func readInputKey() -> InputKey {
     }
 }
 
+/// Visible terminal height in rows (falls back to 24 if it can't be queried).
+private func terminalRows() -> Int {
+    var w = winsize()
+    if ioctl(STDOUT_FILENO, UInt(TIOCGWINSZ), &w) == 0, w.ws_row > 0 {
+        return Int(w.ws_row)
+    }
+    if let env = ProcessInfo.processInfo.environment["LINES"], let n = Int(env), n > 0 {
+        return n
+    }
+    return 24
+}
+
 func selectAndTrash(rows: [SelectableRow]) {
     if rows.isEmpty { print("Nothing to delete."); return }
 
@@ -223,29 +235,52 @@ func selectAndTrash(rows: [SelectableRow]) {
 
     var selected = rows.map { $0.defaultSelected }
     var cursor = 0
+    var scrollTop = 0   // index of first visible body line (drives the viewport)
     let totalSize = rows.reduce(Int64(0)) { $0 + $1.size }
 
     while true {
-        var buf = "\u{1B}[H\u{1B}[2J"   // home + clear screen
-        buf += padCol("#", 5) + padCol("NAME", 60) + "SIZE\n"
-        buf += String(repeating: "-", count: 85) + "\n"
+        // Flatten to display lines, tagged with their row index (nil = spacer/header).
+        var bodyLines: [(text: String, row: Int?)] = []
         for (i, row) in rows.enumerated() {
             if let sh = row.sectionHeader {
-                if i > 0 { buf += "\n" }
-                buf += "\u{1B}[1m" + sh + "\u{1B}[0m\n"   // bold, default color
+                if i > 0 { bodyLines.append((text: "", row: nil)) }   // spacer
+                bodyLines.append((text: "\u{1B}[1m" + sh + "\u{1B}[0m", row: nil))  // bold header
             }
             let dot = selected[i] ? "●" : "○"
             let line = padCol(dot, 5) + padCol(row.label, 60) + formatBytes(row.size)
-            if i == cursor {
-                buf += "\u{1B}[7m" + line + "\u{1B}[K\u{1B}[0m\n"   // inverse video; [K extends bg to row end
+            bodyLines.append((text: line, row: i))
+        }
+
+        // Header + separator on top; separator + status + hint below = 5 lines.
+        let chrome = 5
+        let visible = max(1, terminalRows() - chrome)
+
+        // Scroll-into-view: page stays put until the cursor steps past an edge.
+        let cursorLine = bodyLines.firstIndex { $0.row == cursor } ?? 0
+        if cursorLine < scrollTop { scrollTop = cursorLine }
+        else if cursorLine >= scrollTop + visible { scrollTop = cursorLine - visible + 1 }
+        let maxTop = max(0, bodyLines.count - visible)
+        scrollTop = min(max(0, scrollTop), maxTop)
+        let end = min(bodyLines.count, scrollTop + visible)
+
+        var buf = "\u{1B}[H\u{1B}[2J"   // home + clear screen
+        buf += padCol("#", 5) + padCol("NAME", 60) + "SIZE\n"
+        buf += String(repeating: "-", count: 85) + "\n"
+        for li in scrollTop..<end {
+            let bl = bodyLines[li]
+            if bl.row == cursor {
+                buf += "\u{1B}[7m" + bl.text + "\u{1B}[K\u{1B}[0m\n"   // inverse video; [K extends bg to row end
             } else {
-                buf += line + "\n"
+                buf += bl.text + "\n"
             }
         }
         buf += String(repeating: "-", count: 85) + "\n"
         let selSize = zip(selected, rows).reduce(Int64(0)) { $1.0 ? $0 + $1.1.size : $0 }
         let selCount = selected.filter { $0 }.count
-        buf += "Selected: \(selCount) / \(rows.count)   Size: \(formatBytes(selSize)) / \(formatBytes(totalSize))\n"
+        let more = (scrollTop > 0 || end < bodyLines.count)
+            ? "   [\(cursor + 1)/\(rows.count)]\(scrollTop > 0 ? " ↑more" : "")\(end < bodyLines.count ? " ↓more" : "")"
+            : ""
+        buf += "Selected: \(selCount) / \(rows.count)   Size: \(formatBytes(selSize)) / \(formatBytes(totalSize))\(more)\n"
         buf += "[↑↓] move   [←/→] toggle   [enter] confirm to delete   [q] cancel"
         out.write(Data(buf.utf8))
 
@@ -296,13 +331,35 @@ func trashAll(_ urls: [URL]) -> TrashResult {
     return result
 }
 
+/// Pipe `text` into `pbcopy` so it lands on the macOS clipboard. Returns whether it succeeded.
+@discardableResult
+func copyToClipboard(_ text: String) -> Bool {
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/pbcopy")
+    let pipe = Pipe()
+    proc.standardInput = pipe
+    do {
+        try proc.run()
+        pipe.fileHandleForWriting.write(Data(text.utf8))
+        try? pipe.fileHandleForWriting.close()
+        proc.waitUntilExit()
+        return proc.terminationStatus == 0
+    } catch {
+        return false
+    }
+}
+
 func reportTrashResult(_ result: TrashResult) {
     print("Trashed: \(result.trashed.count)")
     if !result.permissionDenied.isEmpty {
         print("\nNeeded sudo (\(result.permissionDenied.count)):")
         for u in result.permissionDenied { print("  \(u.path)") }
         let quoted = result.permissionDenied.map { "\"\($0.path)\"" }.joined(separator: " ")
-        print("\nManual:  sudo rm -rf \(quoted)")
+        let cmd = "sudo rm -rf \(quoted)"
+        print("\nManual:  \(cmd)")
+        if copyToClipboard(cmd) {
+            print("         ↑ copied to clipboard — just paste & run it")
+        }
     }
     if !result.failed.isEmpty {
         print("\nFailed (\(result.failed.count)):")
